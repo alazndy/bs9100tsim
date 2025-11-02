@@ -1,13 +1,11 @@
-"use client";
+'use client';
 
 import * as React from "react";
 import { Radar, Info, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { simulateCanMessage } from "@/ai/flows/simulate-can-message";
-import { generateSensorDataExplanation } from "@/ai/flows/generate-sensor-data-explanation";
-import { cn } from "@/lib/utils";
+import { simulateCanMessage } from "@/lib/can-simulation";
 
 // --- CONSTANTS ---
 const SIMULATION_WIDTH = 800;
@@ -35,7 +33,6 @@ export default function SimulatorPage() {
   const [obstaclePixelPos, setObstaclePixelPos] = React.useState<ObstaclePixelPosition>(null);
   const [sensorData, setSensorData] = React.useState<SensorData | null>(null);
   const [canMessage, setCanMessage] = React.useState<string | null>(null);
-  const [explanation, setExplanation] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const svgRef = React.useRef<SVGSVGElement>(null);
   const { toast } = useToast();
@@ -53,26 +50,15 @@ export default function SimulatorPage() {
       }
       setCanMessage(canResult.canMessage);
 
-      const explanationResult = await generateSensorDataExplanation({
-        ...data,
-        canMessage: canResult.canMessage,
-      });
-      
-      if (!explanationResult || !explanationResult.explanation) {
-        throw new Error("Failed to generate explanation.");
-      }
-      setExplanation(explanationResult.explanation);
-
     } catch (error) {
       console.error("Simulation failed:", error);
       toast({
         variant: "destructive",
         title: "Simulation Error",
-        description: "An error occurred during the AI simulation. Please try again.",
+        description: "An error occurred during the simulation. Please try again.",
       });
       // Reset state on error
       setCanMessage(null);
-      setExplanation(null);
     } finally {
       setIsLoading(false);
     }
@@ -120,7 +106,6 @@ export default function SimulatorPage() {
       setObstaclePixelPos(null);
       setSensorData(null);
       setCanMessage(null);
-      setExplanation(null);
     }
   };
 
@@ -208,7 +193,6 @@ export default function SimulatorPage() {
                 isLoading={isLoading}
                 sensorData={sensorData}
                 canMessage={canMessage}
-                explanation={explanation}
             />
         </aside>
       </main>
@@ -223,11 +207,10 @@ interface DataPanelProps {
     isLoading: boolean;
     sensorData: SensorData | null;
     canMessage: string | null;
-    explanation: string | null;
 }
 
-function DataPanel({ isLoading, sensorData, canMessage, explanation }: DataPanelProps) {
-    const hasData = sensorData && canMessage && explanation;
+function DataPanel({ isLoading, sensorData, canMessage }: DataPanelProps) {
+    const hasData = sensorData && canMessage;
 
     if (!hasData && !isLoading) {
         return (
@@ -270,24 +253,7 @@ function DataPanel({ isLoading, sensorData, canMessage, explanation }: DataPanel
                     )}
                 </CardContent>
             </Card>
-            <Card>
-                <CardHeader>
-                    <CardTitle>AI Explanation</CardTitle>
-                </CardHeader>
-                <CardContent>
-                     {isLoading ? (
-                        <div className="space-y-2">
-                            <Skeleton className="h-4 w-full" />
-                            <Skeleton className="h-4 w-full" />
-                            <Skeleton className="h-4 w-4/5" />
-                        </div>
-                    ) : (
-                        <p className="text-sm text-muted-foreground">
-                            {explanation || "No explanation available."}
-                        </p>
-                    )}
-                </CardContent>
-            </Card>
+            {canMessage && <CanExplanationPanel canMessage={canMessage} />}
         </div>
     );
 }
@@ -312,3 +278,44 @@ function DataItem({ label, value, unit, isLoading }: DataItemProps) {
         </div>
     )
 }
+
+const byteExplanations = [
+    { title: "Polar Radius", description: "Line of sight distance. Resolution: 0.25m, Offset: 0." },
+    { title: "Polar Angle", description: "Angle to obstacle. Offset: -128 degrees." },
+    { title: "X-Coordinate", description: "Forward distance. Resolution: 0.25m, Offset: 0." },
+    { title: "Y-Coordinate", description: "Lateral distance. Resolution: 0.25m, Offset: -128." },
+    { title: "Relative Speed", description: "Constant value for simulation." },
+    { title: "Signal Power", description: "Signal strength (dB). Constant value for simulation." },
+    { title: "Object Info", description: "Object ID, Status, Trigger. Constant value for simulation." },
+    { title: "Status Flags", description: "Sensor errors and flags. Constant value for simulation." },
+];
+
+interface CanExplanationPanelProps {
+    canMessage: string;
+}
+
+function CanExplanationPanel({ canMessage }: CanExplanationPanelProps) {
+    const bytes = canMessage.split(' ');
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>CAN Message Explanation</CardTitle>
+            </CardHeader>
+            <CardContent>
+                <ul className="space-y-3">
+                    {bytes.map((byte, index) => (
+                        <li key={index} className="flex items-start gap-3">
+                            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-muted font-code text-sm font-semibold">{byte}</div>
+                            <div>
+                                <p className="font-semibold">Byte {index}: <span className="font-normal">{byteExplanations[index].title}</span></p>
+                                <p className="text-xs text-muted-foreground">{byteExplanations[index].description}</p>
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            </CardContent>
+        </Card>
+    );
+}
+
