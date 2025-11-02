@@ -1,1 +1,5 @@
-// Flows will be imported for their side effects in this file.
+import { config } from 'dotenv';
+config();
+
+import '@/ai/flows/simulate-can-message.ts';
+import '@/ai/flows/generate-sensor-data-explanation.ts';
