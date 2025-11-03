@@ -32,14 +32,14 @@ export async function simulateCanMessage(
   // Convert angle to radians for trigonometric functions
   const angleRad = (angle * Math.PI) / 180;
 
-  // Calculations are based on the Brigade BS-9100T manual, section 5.7.
+  // Calculations are based on the Brigade BS-9100T manual.
 
   // Byte 0: Polar Radius (Line of sight distance)
   // Resolution: 0.25m, Offset: 0. Byte = Value / Resolution.
   const polarRadiusByte = distance / 0.25;
 
   // Byte 1: Polar Angle
-  // Physical Value = (Byte Value - 128). So, Byte Value = Physical Value + 128.
+  // Range: -70 to +70 degrees. Byte Value = Physical Value + 128.
   const polarAngleByte = angle + 128;
 
   // Byte 2: Co-ordinates X (Forward distance)
@@ -48,25 +48,29 @@ export async function simulateCanMessage(
   const xCoordByte = xPhys / 0.25;
 
   // Byte 3: Co-ordinates Y (Lateral distance)
-  // Resolution: 0.25m, Offset: -128. Y = distance * sin(angle).
-  // Byte = (Physical Value / Resolution) + 128.
+  // Range: -8m to +8m. Resolution: 0.25m. Byte = (Value / Res) + 128.
   const yPhys = distance * Math.sin(angleRad);
   const yCoordByte = (yPhys / 0.25) + 128;
 
   // Byte 4: Relative Speed.
-  // For this simulation, a constant value is used.
-  const relativeSpeed = 0x8a;
+  // Simulating a stationary object, so speed is 0. Byte = (0 / 0.5) + 128 = 128 (0x80).
+  const relativeSpeed = 0x80;
 
-  // Byte 5: Signal Power (dB).
-  // For this simulation, a constant value is used.
-  const signalPower = 0x32;
+  // Byte 5: Reflected Signal Level (dB).
+  // Using a constant realistic value of 80dB.
+  const signalPower = 0x50;
 
-  // Byte 6: Object ID, Appearance Status, and Trigger Event.
-  // For this simulation, constant values are used.
-  const objectInfo = 0x0a;
+  // Byte 6: Object Info
+  // Bits 7-5: Trigger Event (1 = Object detection) -> 001
+  // Bit 4: Appearance Status (1 = New object) -> 1
+  // Bits 3-0: Object ID (0 = Closest object) -> 0000
+  // Result: 0011 0000 = 0x30
+  const objectInfo = 0x30;
 
-  // Byte 7: Sensor Errors, Identification Flag, and Detection Flag.
-  // For this simulation, constant values are used.
+  // Byte 7: Status Flags
+  // Bit 1: Detection Flag (0 for detection)
+  // Other bits are for sensor errors (all 0 for this simulation).
+  // 0x02 indicates a valid detection.
   const statusFlags = 0x02;
 
   const canMessage = [

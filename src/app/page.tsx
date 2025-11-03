@@ -1,11 +1,14 @@
 'use client';
 
 import * as React from "react";
-import { Radar, Info, Loader2 } from "lucide-react";
+import { Radar, Info, Loader2, Usb, X, Power } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { simulateCanMessage } from "@/lib/can-simulation";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+
 
 // --- CONSTANTS ---
 const SIMULATION_WIDTH = 800;
@@ -15,7 +18,7 @@ const SENSOR_WIDTH = 80;
 const SENSOR_HEIGHT = 20;
 
 const DETECTION_RADIUS_METERS = 10;
-const DETECTION_ANGLE_DEGREES = 110;
+const DETECTION_ANGLE_DEGREES = 140;
 const PIXELS_PER_METER = (SIMULATION_WIDTH / 2) / (DETECTION_RADIUS_METERS * 1.2);
 const DETECTION_RADIUS_PIXELS = DETECTION_RADIUS_METERS * PIXELS_PER_METER;
 
@@ -34,8 +37,13 @@ export default function SimulatorPage() {
   const [sensorData, setSensorData] = React.useState<SensorData | null>(null);
   const [canMessage, setCanMessage] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [isClient, setIsClient] = React.useState(false);
   const svgRef = React.useRef<SVGSVGElement>(null);
   const { toast } = useToast();
+
+  React.useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const handleSimulation = async (data: SensorData) => {
     setIsLoading(true);
@@ -126,7 +134,7 @@ export default function SimulatorPage() {
             </CardHeader>
             <CardContent>
                 <div className="relative aspect-[16/9] w-full cursor-crosshair overflow-hidden rounded-md border bg-card">
-                  <svg
+                {isClient && <svg
                     ref={svgRef}
                     viewBox={`0 0 ${SIMULATION_WIDTH} ${SIMULATION_HEIGHT}`}
                     onClick={handleClick}
@@ -178,7 +186,7 @@ export default function SimulatorPage() {
                         className="fill-destructive"
                       />
                     )}
-                  </svg>
+                  </svg>}
                   {isLoading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm">
                       <Loader2 className="h-10 w-10 animate-spin text-accent" />
@@ -253,6 +261,7 @@ function DataPanel({ isLoading, sensorData, canMessage }: DataPanelProps) {
                     )}
                 </CardContent>
             </Card>
+            <SerialBroadcastPanel canMessage={canMessage} />
             {canMessage && <CanExplanationPanel canMessage={canMessage} />}
         </div>
     );
@@ -319,3 +328,130 @@ function CanExplanationPanel({ canMessage }: CanExplanationPanelProps) {
     );
 }
 
+
+interface SerialBroadcastPanelProps {
+  canMessage: string | null;
+}
+
+function SerialBroadcastPanel({ canMessage }: SerialBroadcastPanelProps) {
+  const [comPorts, setComPorts] = React.useState<any[]>([]);
+  const [selectedPort, setSelectedPort] = React.useState<string | null>(null);
+  const [isBroadcasting, setIsBroadcasting] = React.useState(false);
+  const [intervalId, setIntervalId] = React.useState<NodeJS.Timeout | null>(null);
+  const { toast } = useToast();
+
+  React.useEffect(() => {
+    async function fetchComPorts() {
+      try {
+        const response = await fetch('/api/serial');
+        if (!response.ok) {
+          throw new Error('Failed to fetch COM ports');
+        }
+        const ports = await response.json();
+        setComPorts(ports);
+      } catch (error) {
+        console.error(error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Could not fetch COM ports. Make sure the server is running.",
+        });
+      }
+    }
+    fetchComPorts();
+  }, [toast]);
+
+  const startBroadcasting = () => {
+    if (!selectedPort || !canMessage) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please select a COM port and ensure a CAN message is generated.",
+      });
+      return;
+    }
+
+    setIsBroadcasting(true);
+    const id = setInterval(async () => {
+      try {
+        await fetch('/api/serial', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ port: selectedPort, canMessage }),
+        });
+      } catch (error) {
+        console.error("Error broadcasting CAN message:", error);
+        toast({
+          variant: "destructive",
+          title: "Broadcast Error",
+          description: "Failed to send CAN message. Check the console for details.",
+        });
+        stopBroadcasting(); 
+      }
+    }, 50); // 20 times per second
+    setIntervalId(id);
+  };
+
+  const stopBroadcasting = () => {
+    if (intervalId) {
+      clearInterval(intervalId);
+    }
+    setIsBroadcasting(false);
+    setIntervalId(null);
+  };
+
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [intervalId]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Serial Port Broadcast</CardTitle>
+        <CardDescription>Transmit CAN messages to a physical device.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-2">
+            <Usb className="h-5 w-5 text-muted-foreground"/>
+            <Select onValueChange={setSelectedPort} disabled={isBroadcasting}>
+                <SelectTrigger>
+                    <SelectValue placeholder="Select a COM port..." />
+                </SelectTrigger>
+                <SelectContent>
+                    {comPorts.map((port) => (
+                        <SelectItem key={port.path} value={port.path}>
+                            {port.path} {port.manufacturer && `(${port.manufacturer})`}
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+        </div>
+        
+        <div className="flex items-center justify-between">
+            {isBroadcasting ? (
+                <Button onClick={stopBroadcasting} variant="destructive" className="w-full">
+                    <X className="mr-2 h-4 w-4" /> Stop Broadcasting
+                </Button>
+            ) : (
+                <Button onClick={startBroadcasting} disabled={!selectedPort || !canMessage} className="w-full">
+                    <Power className="mr-2 h-4 w-4" /> Start Broadcasting
+                </Button>
+            )}
+        </div>
+         {isBroadcasting && selectedPort && (
+            <div className="flex items-center gap-2 text-sm text-green-500">
+                <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+                Broadcasting to {selectedPort}
+            </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
